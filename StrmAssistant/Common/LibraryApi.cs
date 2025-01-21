@@ -64,6 +64,8 @@ namespace StrmAssistant.Common
                             : (MediaContainers?)null)
                     .Where(container => container.HasValue)
                     .Select(container => container.Value)
+                    .Concat(new[] { MediaContainers.Iso })
+                    .Distinct()
                     .ToArray();
             }
         }
@@ -72,19 +74,21 @@ namespace StrmAssistant.Common
         {
             get
             {
-                return Plugin.Instance.MediaInfoExtractStore.GetOptions().ImageCaptureExcludeMediaContainers
-                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                return Plugin.Instance.MediaInfoExtractStore.GetOptions()
+                    .ImageCaptureExcludeMediaContainers.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
                     .SelectMany(c =>
                     {
                         if (Enum.TryParse<MediaContainers>(c.Trim(), true, out var container))
                         {
                             var aliases = container.GetAliases();
-                            return aliases?.Where(a => !string.IsNullOrWhiteSpace(a)) ??
-                                   Array.Empty<string>();
+                            return aliases?.Where(a => !string.IsNullOrWhiteSpace(a)) ?? Array.Empty<string>();
                         }
 
                         return Array.Empty<string>();
                     })
+                    .Concat(MediaContainers.Iso.GetAliases())
+                    .Where(alias => !string.IsNullOrWhiteSpace(alias))
+                    .Distinct()
                     .ToArray();
             }
         }
