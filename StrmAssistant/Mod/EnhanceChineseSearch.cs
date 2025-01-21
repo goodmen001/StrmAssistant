@@ -21,6 +21,7 @@ namespace StrmAssistant.Mod
         private static MethodInfo sqlite3_enable_load_extension;
         private static FieldInfo sqlite3_db;
         private static MethodInfo _createConnection;
+        private static PropertyInfo _dbFilePath;
         private static MethodInfo _getJoinCommandText;
         private static MethodInfo _createSearchTerm;
         private static MethodInfo _cacheIdsFromTextParams;
@@ -28,6 +29,7 @@ namespace StrmAssistant.Mod
         public static string CurrentTokenizerName { get; private set; } = "unknown";
 
         private static string _tokenizerPath;
+        private static readonly object _patchPhase2InitLock = new object();
         private static bool _patchPhase2Initialized;
         private static string[] _includeItemTypes = Array.Empty<string>();
         private static readonly Dictionary<string, Regex> patterns = new Dictionary<string, Regex>
@@ -55,6 +57,8 @@ namespace StrmAssistant.Mod
                 var baseSqliteRepository = embySqlite.GetType("Emby.Sqlite.BaseSqliteRepository");
                 _createConnection = baseSqliteRepository.GetMethod("CreateConnection",
                     BindingFlags.NonPublic | BindingFlags.Instance);
+                _dbFilePath =
+                    baseSqliteRepository.GetProperty("DbFilePath", BindingFlags.NonPublic | BindingFlags.Instance);
 
                 var embyServerImplementationsAssembly = Assembly.Load("Emby.Server.Implementations");
                 var sqliteItemRepository =
@@ -431,16 +435,29 @@ namespace StrmAssistant.Mod
         }
 
         [HarmonyPostfix]
-        private static void CreateConnectionPostfix(bool isReadOnly, ref IDatabaseConnection __result)
+        private static void CreateConnectionPostfix(object __instance, bool isReadOnly,
+            ref IDatabaseConnection __result)
         {
             if (!isReadOnly && !_patchPhase2Initialized)
             {
-                var tokenizerLoaded = LoadTokenizerExtension(__result);
-
-                if (tokenizerLoaded)
+                lock (_patchPhase2InitLock)
                 {
-                    PatchPhase2(__result);
-                    _patchPhase2Initialized = true;
+                    if (!_patchPhase2Initialized)
+                    {
+                        var db = _dbFilePath.GetValue(__instance) as string;
+                        if (db?.EndsWith("library.db", StringComparison.OrdinalIgnoreCase) != true)
+                        {
+                            return;
+                        }
+
+                        var tokenizerLoaded = LoadTokenizerExtension(__result);
+
+                        if (tokenizerLoaded)
+                        {
+                            PatchPhase2(__result);
+                            _patchPhase2Initialized = true;
+                        }
+                    }
                 }
             }
         }
